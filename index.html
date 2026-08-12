@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <title>LED Backpack Tetris</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,sans-serif;--bg:#080b12;--button:#172238;--border:#384c70;--accent:#63c8ff;--pressed:#2973b9;--bad:#ff6b78}
+    *{box-sizing:border-box;touch-action:none;user-select:none;-webkit-user-select:none}
+    html,body{width:100%;height:100%;overscroll-behavior:none}
+    body{margin:0;height:100dvh;overflow:hidden;background:var(--bg);color:#eef3ff;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+    main{height:100%;min-height:0;display:grid;grid-template-rows:30px minmax(0,1fr);gap:6px;padding:0 8px 8px}
+    .status{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:7px;font:800 11px/1 ui-monospace,monospace;letter-spacing:.04em;white-space:nowrap}
+    #connection{overflow:hidden;text-overflow:ellipsis;color:var(--bad)} #connection.connected{color:var(--accent)}
+    .tiny{min-height:26px;min-width:40px;border-radius:8px;padding:2px 8px;font-size:12px;box-shadow:none}
+    .controls{min-height:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:minmax(72px,1fr) minmax(72px,1fr) minmax(72px,.85fr) minmax(72px,.62fr);gap:8px}
+    button{min-width:0;min-height:72px;border:1px solid var(--border);border-radius:14px;background:var(--button);color:#fff;font:800 clamp(17px,5vw,24px)/1 system-ui,sans-serif;padding:6px;box-shadow:0 3px 0 #0b111d;transition:transform 50ms,background-color 50ms,border-color 50ms,box-shadow 50ms}
+    button.active,button:active{transform:translateY(3px);background:var(--pressed);border-color:var(--accent);box-shadow:0 0 0 #0b111d,inset 0 0 16px rgb(99 200 255/24%)}
+    button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    [data-action=rotate_ccw]{grid-column:1/3}[data-action=rotate_cw]{grid-column:3/5}[data-action=hold]{grid-column:5/7}
+    [data-action=left]{grid-column:1/3}[data-action=soft_drop]{grid-column:3/5}[data-action=right]{grid-column:5/7}
+    [data-action=hard_drop]{grid-column:1/7;background:#543074}
+    [data-action=pause]{grid-column:1/4;font-size:clamp(14px,4vw,18px)} [data-action=start]{grid-column:4/7;background:#17633e;font-size:clamp(14px,4vw,18px)}
+    .overlay{position:fixed;inset:0;z-index:5;display:grid;place-items:center;padding:16px;background:rgb(0 0 0/72%)} .overlay[hidden]{display:none}
+    .panel{width:min(420px,100%);max-height:100%;overflow:auto;border:1px solid var(--border);border-radius:16px;background:#101725;padding:18px;box-shadow:0 16px 50px #000}
+    .panel h1{margin:0 0 14px;font-size:20px}.panel label{display:grid;grid-template-columns:1fr 100px;align-items:center;gap:12px;margin:10px 0}.panel input{width:100%;min-height:42px;border:1px solid var(--border);border-radius:8px;background:#080b12;color:#fff;font-size:17px;padding:6px}
+    .check{grid-template-columns:auto 1fr!important}.check input{width:22px;min-height:22px}.error{min-height:2.5em;color:var(--bad);font-size:13px}.panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.panel-actions button{min-height:52px;font-size:16px}
+    #unsupported{position:fixed;inset:0;z-index:10;display:grid;place-items:center;padding:24px;background:var(--bg);text-align:center;line-height:1.7} #unsupported[hidden]{display:none}
+  </style>
+</head>
+<body>
+<main>
+  <div class="status">
+    <button id="connect" class="tiny" type="button">接続</button>
+    <span id="connection" role="status" aria-live="polite">未接続 / 0 pkt/s</span>
+    <button id="settings-open" class="tiny" type="button" aria-label="設定">⚙</button>
+  </div>
+  <section class="controls" aria-label="Tetris controls">
+    <button data-action="rotate_ccw">↶ CCW</button><button data-action="rotate_cw">↷ CW</button><button data-action="hold">HOLD</button>
+    <button data-action="left" aria-label="左">←</button><button data-action="soft_drop" aria-label="下">↓</button><button data-action="right" aria-label="右">→</button>
+    <button data-action="hard_drop">DROP</button><button data-action="pause">PAUSE</button><button data-action="start">START</button>
+  </section>
+</main>
+<div id="settings" class="overlay" hidden>
+  <form class="panel" id="settings-form">
+    <h1>設定</h1>
+    <label class="check"><input id="all-devices" type="checkbox"><span>すべてのデバイスを表示</span></label>
+    <label>盤面 cols<input name="cols" type="number" min="4" max="64" required></label>
+    <label>盤面 rows<input name="rows" type="number" min="4" max="64" required></label>
+    <label>cell_w<input name="cell_w" type="number" min="1" max="16" required></label>
+    <label>cell_h<input name="cell_h" type="number" min="1" max="16" required></label>
+    <label>輝度 (0–15)<input name="brightness" type="number" min="0" max="15" required></label>
+    <label>描画 fps (1–30)<input name="fps" type="number" min="1" max="30" required></label>
+    <div id="settings-error" class="error"></div>
+    <div class="panel-actions"><button type="button" id="settings-close">閉じる</button><button type="submit">適用</button></div>
+  </form>
+</div>
+<div id="unsupported" hidden>Web Bluetooth に対応していません。<br>Android は Chrome、iOS は Bluefy が必要です。</div>
+<script>
+// ===PROTOCOL_START===
+(() => {
+  'use strict';
+  const u8 = values => Uint8Array.from(values);
+  const concat = (...parts) => { const size=parts.reduce((n,p)=>n+p.length,0), out=new Uint8Array(size); let at=0; for(const p of parts){out.set(p,at);at+=p.length} return out };
+  const u16 = value => { if(!Number.isInteger(value)||value<0||value>65535) throw new RangeError('16-bit value out of range'); return u8([value&255,value>>>8]) };
+  const rgb = color => { if(!color||color.length!==3||color.some(v=>!Number.isInteger(v)||v<0||v>255)) throw new RangeError('color must contain three values in the range 0..255'); return u8(color) };
+  function buildFrame(payload,sno,mode){
+    payload=Uint8Array.from(payload); if(mode!==2&&mode!==3) throw new RangeError('mode must be 2 or 3');
+    const without=concat(u8([0xaa,0x55,0xff,0xff]),u16(payload.length+6),u16(sno&0xffff),u8([0xc1,mode]),payload);
+    let sum=0; for(const value of without) sum=(sum+value)&0xffff; return concat(without,u16(sum));
+  }
+  function encodeTlvLen(n){ if(!Number.isInteger(n)||n<0||n>65535) throw new RangeError('TLV length must be in the range 0..65535'); return n<128?u8([n]):n<256?u8([0x81,n]):u8([0x82,n&255,n>>>8]) }
+  function command(payload,mode){ return {payload:Uint8Array.from(payload),mode} }
+  function ascii(text){ const out=new Uint8Array(text.length); for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);if(c>127)throw new RangeError('dev_key must contain ASCII characters only');out[i]=c}return out }
+  function cmdGet(name,type=0,devKey=''){
+    const tags={dev_info:0x0a,param_dev:0x1b,power:0x04,light:0x06,rotate:0x2f,pgm_play:0x36,global_ani:0x38,channel_color:0x39,mirror:0x3a};
+    if(name==='dev_info'&&devKey){const key=ascii(devKey);if(key.length>127)throw new RangeError('dev_key too long');return command(concat(u8([0x0a,key.length]),key),3)}
+    if(Object.hasOwn(tags,name))return command(u8([tags[name],0]),3);
+    if(name==='bluetooth'||name==='delay_hide')return command(u8([0x34,1,0]),3); if(name==='power_model')return command(u8([0x34,1,1]),3);
+    if(name==='ani_num'){if(!Number.isInteger(type)||type<0||type>255)throw new RangeError('ani_num type');return command(u8([0x33,1,type]),3)} throw new RangeError(`unknown get name: ${name}`);
+  }
+  function cmdGetDevInfoAll(devKey=''){const key=ascii(devKey);if(key.length>127)throw new RangeError('dev_key too long');return command(concat(u8([0x0a,key.length]),key,u8([0x1b,0,0x04,0,0x06,0])),3)}
+  function cmdLight(value,type=0){if(!Number.isInteger(value)||value<0||value>15)throw new RangeError('brightness must be in the range 0..15');return command(u8([0x06,0x02,type&255,value||15]),2)}
+  function cmdGame(id=null,opt=null){const options={left:37,up:38,right:39,down:40,start:115,pause:112,done:100,exit:101};let value;if(typeof opt==='string'){if(!Object.hasOwn(options,opt))throw new RangeError(`unknown game option: ${opt}`);value=options[opt]}else if(Number.isInteger(id)&&id>=0&&id<=127)value=id+128;else throw new RangeError('provide an id in 0..127 or a known opt');return command(u8([0x30,1,value]),2)}
+  function cmdRtDrawRect(color,x0,y0,x1,y1){return command(concat(u8([0x32,0x0d,1]),rgb(color),u8([0]),u16(x0),u16(y0),u16(x1),u16(y1)),2)}
+  function normaliseBits(bits,w,h){if(bits.length===h&&bits.every(row=>Array.isArray(row)||ArrayBuffer.isView(row))){const rows=bits.map(row=>Array.from(row,v=>v?1:0));if(rows.some(row=>row.length!==w))throw new RangeError('bitmap row width');return rows}const flat=Array.from(bits,v=>v?1:0);if(flat.length!==w*h)throw new RangeError('bitmap data length');return Array.from({length:h},(_,y)=>flat.slice(y*w,(y+1)*w))}
+  function cmdRtDrawBitmap(bits,color,x0,y0,x1,y1){const w=x1-x0+1,h=y1-y0+1;if(w<=0||h<=0)throw new RangeError('bitmap rectangle must be non-empty');const rows=normaliseBits(bits,w,h),packed=[];for(const row of rows)for(let start=0;start<w;start+=8){let byte=0;row.slice(start,start+8).forEach((v,i)=>{if(v)byte|=0x80>>>i});packed.push(byte)}const value=concat(u8([0]),rgb(color),u16(x0),u16(y0),u16(x1),u16(y1),u8(packed));return command(concat(u8([0x32]),encodeTlvLen(value.length),value),2)}
+  function cmdRtDrawPoints(points,color){const unique=new Map;for(const p of points)unique.set(`${p[0]},${p[1]}`,[p[0],p[1]]);if(!unique.size)throw new RangeError('points must not be empty');const all=[...unique.values()],xs=all.map(p=>p[0]),ys=all.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),set=new Set(unique.keys()),bits=[];for(let y=y0;y<=y1;y++){const row=[];for(let x=x0;x<=x1;x++)row.push(set.has(`${x},${y}`));bits.push(row)}return cmdRtDrawBitmap(bits,color,x0,y0,x1,y1)}
+  globalThis.__loyProtocol={buildFrame,encodeTlvLen,cmdGet,cmdGetDevInfoAll,cmdLight,cmdGame,cmdRtDrawRect,cmdRtDrawPoints,cmdRtDrawBitmap};
+})();
+// ===PROTOCOL_END===
+(() => {
+  'use strict';
+  const P=globalThis.__loyProtocol, SERVICE='0000fff0-0000-1000-8000-00805f9b34fb', WRITE='0000fff2-0000-1000-8000-00805f9b34fb', NOTIFY='0000fff1-0000-1000-8000-00805f9b34fb';
+  const BLACK=[0,0,0], COLORS={I:[0,240,240],J:[0,80,240],L:[240,160,0],O:[240,240,0],S:[0,220,80],T:[180,0,220],Z:[240,30,30]};
+  const SHAPES={
+    I:[[[0,1],[1,1],[2,1],[3,1]],[[2,0],[2,1],[2,2],[2,3]],[[0,2],[1,2],[2,2],[3,2]],[[1,0],[1,1],[1,2],[1,3]]],
+    J:[[[0,0],[0,1],[1,1],[2,1]],[[1,0],[2,0],[1,1],[1,2]],[[0,1],[1,1],[2,1],[2,2]],[[1,0],[1,1],[0,2],[1,2]]],
+    L:[[[2,0],[0,1],[1,1],[2,1]],[[1,0],[1,1],[1,2],[2,2]],[[0,1],[1,1],[2,1],[0,2]],[[0,0],[1,0],[1,1],[1,2]]],
+    O:[[[1,0],[2,0],[1,1],[2,1]],[[1,0],[2,0],[1,1],[2,1]],[[1,0],[2,0],[1,1],[2,1]],[[1,0],[2,0],[1,1],[2,1]]],
+    S:[[[1,0],[2,0],[0,1],[1,1]],[[1,0],[1,1],[2,1],[2,2]],[[1,1],[2,1],[0,2],[1,2]],[[0,0],[0,1],[1,1],[1,2]]],
+    T:[[[1,0],[0,1],[1,1],[2,1]],[[1,0],[1,1],[2,1],[1,2]],[[0,1],[1,1],[2,1],[1,2]],[[1,0],[0,1],[1,1],[1,2]]],
+    Z:[[[0,0],[1,0],[1,1],[2,1]],[[2,0],[1,1],[2,1],[1,2]],[[0,1],[1,1],[1,2],[2,2]],[[1,0],[0,1],[1,1],[0,2]]]
+  };
+  const JK={'0,1':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],'1,0':[[0,0],[1,0],[1,-1],[0,2],[1,2]],'1,2':[[0,0],[1,0],[1,-1],[0,2],[1,2]],'2,1':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],'2,3':[[0,0],[1,0],[1,1],[0,-2],[1,-2]],'3,2':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],'3,0':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],'0,3':[[0,0],[1,0],[1,1],[0,-2],[1,-2]]};
+  const IK={'0,1':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],'1,0':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],'1,2':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]],'2,1':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],'2,3':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],'3,2':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],'3,0':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],'0,3':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]]};
+  class Bag{constructor(){this.items=[]}draw(){if(!this.items.length){this.items=Object.keys(COLORS);for(let i=this.items.length-1;i;i--){const j=Math.floor(Math.random()*(i+1));[this.items[i],this.items[j]]=[this.items[j],this.items[i]]}}return this.items.pop()}}
+  class Game{
+    constructor(cols,rows){this.cols=cols;this.rows=rows;this.bag=new Bag;this.heldInputs=new Map;this.repeatElapsed=new Map;this.reset()}
+    spawn(kind){const width=Math.max(...SHAPES[kind][0].map(p=>p[0]))+1;return{kind,x:Math.floor((this.cols-width)/2),y:-1,r:0}}
+    cells(piece=this.current){return SHAPES[piece.kind][piece.r].map(([x,y])=>[piece.x+x,piece.y+y])}
+    reset(){this.board=Array.from({length:this.rows},()=>Array(this.cols).fill(null));this.queue=Array.from({length:5},()=>this.bag.draw());this.current=this.spawn(this.bag.draw());this.held=null;this.canHold=true;this.state='READY';this.score=this.lines=0;this.level=1;this.gravityElapsed=this.lockElapsed=0;this.heldInputs.clear();this.repeatElapsed.clear()}
+    collides(p){return this.cells(p).some(([x,y])=>x<0||x>=this.cols||y>=this.rows||(y>=0&&this.board[y][x]!==null))}
+    move(dx,dy){const p={...this.current,x:this.current.x+dx,y:this.current.y+dy};if(this.collides(p))return false;this.current=p;if(dy===0)this.lockElapsed=0;return true}
+    rotate(direction){const old=this.current.r,n=(old+direction+4)%4;if(this.current.kind==='O'){this.current.r=n;return true}for(const [dx,dyUp] of (this.current.kind==='I'?IK:JK)[`${old},${n}`]){const p={...this.current,x:this.current.x+dx,y:this.current.y-dyUp,r:n};if(!this.collides(p)){this.current=p;this.lockElapsed=0;return true}}return false}
+    next(){const kind=this.queue.shift();this.queue.push(this.bag.draw());this.current=this.spawn(kind);this.canHold=true;this.gravityElapsed=this.lockElapsed=0;if(this.collides(this.current))this.state='GAME_OVER'}
+    clearLines(){const left=this.board.filter(row=>row.some(v=>v===null)),n=this.rows-left.length;this.board=Array.from({length:n},()=>Array(this.cols).fill(null)).concat(left);return n}
+    lock(){let above=false;for(const [x,y] of this.cells()){if(y<0)above=true;else this.board[y][x]=this.current.kind}const n=this.clearLines();if(n){this.score+=[0,100,300,500,800][n]*this.level;this.lines+=n;this.level=Math.floor(this.lines/10)+1}if(above)this.state='GAME_OVER';else this.next()}
+    hold(){if(!this.canHold)return;const old=this.current.kind;if(this.held===null){this.held=old;this.next()}else{this.current=this.spawn(this.held);this.held=old}this.canHold=false;if(this.collides(this.current))this.state='GAME_OVER'}
+    input(action,pressed=true){if(action==='reset'&&pressed){this.reset();return}if(action==='start'&&pressed){if(this.state==='READY'||this.state==='PAUSED')this.state='PLAYING';return}if(action==='pause'&&pressed){if(this.state==='PLAYING')this.state='PAUSED';else if(this.state==='PAUSED')this.state='PLAYING';return}if(['left','right','soft_drop'].includes(action)){if(pressed&&!this.heldInputs.has(action)){this.heldInputs.set(action,0);this.repeatElapsed.set(action,0);if(this.state==='PLAYING')this.move(action==='left'?-1:action==='right'?1:0,action==='soft_drop'?1:0)}else if(!pressed){this.heldInputs.delete(action);this.repeatElapsed.delete(action)}return}if(!pressed||this.state!=='PLAYING')return;if(action==='rotate_cw')this.rotate(1);else if(action==='rotate_ccw')this.rotate(-1);else if(action==='hold')this.hold();else if(action==='hard_drop'){let d=0;while(this.move(0,1))d++;this.score+=d*2;this.lock()}}
+    get gravityMs(){return Math.max(50,1000*(.8-(this.level-1)*.007)**(this.level-1))}
+    step(dt){if(this.state!=='PLAYING')return;for(const action of [...this.heldInputs.keys()]){this.heldInputs.set(action,this.heldInputs.get(action)+dt);if(this.heldInputs.get(action)<170)continue;let repeat=this.repeatElapsed.get(action)+dt,interval=action==='soft_drop'?35:50;while(repeat>=interval){repeat-=interval;const moved=this.move(action==='left'?-1:action==='right'?1:0,action==='soft_drop'?1:0);if(action==='soft_drop'&&moved)this.score++}this.repeatElapsed.set(action,repeat)}this.gravityElapsed+=dt;const interval=this.heldInputs.has('soft_drop')?35:this.gravityMs;while(this.gravityElapsed>=interval){this.gravityElapsed-=interval;if(!this.move(0,1))break}const p={...this.current,y:this.current.y+1};if(this.collides(p)){this.lockElapsed+=dt;if(this.lockElapsed>=500)this.lock()}else this.lockElapsed=0}
+  }
+  class FrameBuffer{constructor(w=64,h=64){this.w=w;this.h=h;this.pixels=Array.from({length:h},()=>Array.from({length:w},()=>BLACK))}copy(){const f=new FrameBuffer(this.w,this.h);f.pixels=this.pixels.map(r=>r.map(c=>c.slice()));return f}clear(){for(let y=0;y<this.h;y++)for(let x=0;x<this.w;x++)this.pixels[y][x]=BLACK}fillRect(x0,y0,x1,y1,c){for(let y=Math.max(0,y0);y<=Math.min(this.h-1,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(this.w-1,x1);x++)this.pixels[y][x]=c}}
+  const same=(a,b)=>a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2], key=c=>c.join(','), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  function layout(){const w=settings.cols*settings.cell_w,h=settings.rows*settings.cell_h;return{x:Math.floor((64-w)/2),y:Math.floor((64-h)/2),w,h}}
+  function render(game,fb){fb.clear();const l=layout(),cell=(x,y,c)=>fb.fillRect(l.x+x*settings.cell_w,l.y+y*settings.cell_h,l.x+x*settings.cell_w+Math.max(0,settings.cell_w-2),l.y+y*settings.cell_h+Math.max(0,settings.cell_h-2),c);game.board.forEach((row,y)=>row.forEach((v,x)=>{if(v)cell(x,y,COLORS[v])}));if(game.state!=='GAME_OVER')for(const [x,y] of game.cells())if(x>=0&&x<game.cols&&y>=0&&y<game.rows)cell(x,y,COLORS[game.current.kind]);if(l.x>=1&&l.y>=1&&l.x+l.w<64&&l.y+l.h<64){const c=[40,40,48];fb.fillRect(l.x-1,l.y-1,l.x+l.w,l.y-1,c);fb.fillRect(l.x-1,l.y+l.h,l.x+l.w,l.y+l.h,c);fb.fillRect(l.x-1,l.y-1,l.x-1,l.y+l.h,c);fb.fillRect(l.x+l.w,l.y-1,l.x+l.w,l.y+l.h,c)}}
+  function rectangle(points){const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return points.length===(x1-x0+1)*(y1-y0+1)?[x0,y0,x1,y1]:null}
+  function colorCommands(points,color){if(!points.length)return[];const rect=rectangle(points);if(rect)return[P.cmdRtDrawRect(color,...rect)];const xs=points.map(p=>p[0]),x0=Math.min(...xs),x1=Math.max(...xs),bytesPerRow=Math.ceil((x1-x0+1)/8),bandH=Math.max(1,Math.floor((400-16)/bytesPerRow)),ys=points.map(p=>p[1]),lo=Math.min(...ys),hi=Math.max(...ys),out=[];for(let y=lo;y<=hi;y+=bandH){const band=points.filter(p=>p[1]>=y&&p[1]<=y+bandH-1);if(band.length)out.push(P.cmdRtDrawPoints(band,color))}return out}
+  function diffCommands(a,b,full=false){const groups=new Map;if(full){const counts=new Map;for(const row of b.pixels)for(const c of row)counts.set(key(c),(counts.get(key(c))||0)+1);const bg=[...counts].sort((x,y)=>y[1]-x[1])[0][0].split(',').map(Number);const out=[P.cmdRtDrawRect(bg,0,0,63,63)];for(let y=0;y<64;y++)for(let x=0;x<64;x++){const c=b.pixels[y][x];if(!same(c,bg)){const k=key(c);if(!groups.has(k))groups.set(k,[]);groups.get(k).push([x,y])}}for(const [k,pts] of groups)out.push(...colorCommands(pts,k.split(',').map(Number)));return out}for(let y=0;y<64;y++)for(let x=0;x<64;x++)if(!same(a.pixels[y][x],b.pixels[y][x])){const c=b.pixels[y][x],k=key(c);if(!groups.has(k))groups.set(k,[]);groups.get(k).push([x,y])}const out=[];for(const [k,pts] of groups)out.push(...colorCommands(pts,k.split(',').map(Number)));return out}
+  function packCommands(commands){const packets=[];let parts=[],size=0;for(const c of commands){if(size&&size+c.payload.length>400){packets.push(parts);parts=[];size=0}parts.push(c.payload);size+=c.payload.length}if(parts.length)packets.push(parts);return packets.map(parts=>{const n=parts.reduce((s,p)=>s+p.length,0),payload=new Uint8Array(n);let at=0;for(const p of parts){payload.set(p,at);at+=p.length}return{payload,mode:2}})}
+  class Ble{
+    constructor(){this.device=null;this.server=null;this.write=null;this.notify=null;this.sno=1;this.chain=Promise.resolve();this.lastStart=0;this.sent=[];this.reconnecting=false;this.restoring=false}
+    status(text,ok=false){connection.textContent=`${text} / ${this.rate()} pkt/s`;connection.classList.toggle('connected',ok)}
+    rate(){const now=performance.now();this.sent=this.sent.filter(t=>t>=now-1000);return this.sent.length}
+    async choose(){const all=document.querySelector('#all-devices').checked,options=all?{acceptAllDevices:true,optionalServices:[SERVICE]}:{filters:[{namePrefix:'YS'}],optionalServices:[SERVICE]};this.device=await navigator.bluetooth.requestDevice(options);this.device.addEventListener('gattserverdisconnected',()=>this.disconnected());await this.connectGatt();await this.restore()}
+    async connectGatt(){this.status('接続中');this.server=await this.device.gatt.connect();const service=await this.server.getPrimaryService(SERVICE);this.write=await service.getCharacteristic(WRITE);try{this.notify=await service.getCharacteristic(NOTIFY);await this.notify.startNotifications()}catch(e){console.warn('Notify unavailable',e)}this.status(`接続 ${this.device.name||''}`,true)}
+    enqueue(command){const frame=P.buildFrame(command.payload,this.sno++,command.mode);const task=this.chain.then(()=>this.transmit(frame));this.chain=task.catch(()=>{});return task}
+    async transmit(frame){if(!this.write||!this.device?.gatt.connected)throw new Error('BLE disconnected');const wait=25-(performance.now()-this.lastStart);if(wait>0)await sleep(wait);this.lastStart=performance.now();for(let at=0;at<frame.length;at+=180){await this.write.writeValueWithoutResponse(frame.slice(at,at+180));if(at+180<frame.length)await sleep(10)}this.sent.push(performance.now())}
+    async restore(){this.restoring=true;try{await this.enqueue(P.cmdLight(settings.brightness));await this.enqueue(P.cmdGame(16));render(game,current);const packets=packCommands(diffCommands(new FrameBuffer,current,true));for(let at=0;at<packets.length;at+=3){for(const packet of packets.slice(at,at+3))await this.enqueue(packet);if(at+3<packets.length)await sleep(1000/settings.fps)}previous=current.copy();pending=[];pendingSnapshot=null;forceFull=false}finally{this.restoring=false}}
+    disconnected(){this.write=null;this.status('切断・再接続待機');if(!this.reconnecting)this.reconnect()}
+    async reconnect(){this.reconnecting=true;for(let i=0;i<5;i++){await sleep(Math.min(2**i,8)*1000);try{await this.connectGatt();await this.restore();this.reconnecting=false;return}catch(e){this.status(`再接続 ${i+1}/5 失敗`)}}this.reconnecting=false;this.status('再接続失敗')}
+  }
+  const defaults={cols:16,rows:16,cell_w:4,cell_h:4,brightness:8,fps:10};let settings={...defaults};try{settings={...settings,...JSON.parse(localStorage.getItem('led-backpack-tetris')||'{}')}}catch{}
+  let game=new Game(settings.cols,settings.rows),current=new FrameBuffer,previous=new FrameBuffer,pending=[],pendingSnapshot=null,forceFull=true,lastDraw=0,drawing=false,ble=new Ble;
+  const connection=document.querySelector('#connection'),form=document.querySelector('#settings-form'),overlay=document.querySelector('#settings'),error=document.querySelector('#settings-error');
+  function showSettings(){for(const k of Object.keys(defaults))form.elements[k].value=settings[k];error.textContent='';overlay.hidden=false}
+  document.querySelector('#settings-open').addEventListener('click',showSettings);document.querySelector('#settings-close').addEventListener('click',()=>overlay.hidden=true);
+  form.addEventListener('submit',e=>{e.preventDefault();const next={};for(const k of Object.keys(defaults))next[k]=Number(form.elements[k].value);if(!Object.values(next).every(Number.isInteger)){error.textContent='すべて整数で入力してください。';return}if(next.cols*next.cell_w>64||next.rows*next.cell_h>64){error.textContent=`盤面 ${next.cols*next.cell_w}×${next.rows*next.cell_h} は 64×64 に収まりません。`;return}if(next.cols<4||next.rows<4||next.cell_w<1||next.cell_h<1||next.brightness<0||next.brightness>15||next.fps<1||next.fps>30){error.textContent='入力範囲を確認してください。';return}const resized=next.cols!==settings.cols||next.rows!==settings.rows;settings=next;localStorage.setItem('led-backpack-tetris',JSON.stringify(settings));if(resized)game=new Game(settings.cols,settings.rows);forceFull=true;pending=[];previous=new FrameBuffer;if(ble.device?.gatt.connected)ble.enqueue(P.cmdLight(settings.brightness)).catch(report);overlay.hidden=true});
+  function report(e){console.error(e);ble.status(e?.message||'エラー')}
+  document.querySelector('#connect').addEventListener('click',()=>ble.choose().catch(report));
+  document.querySelectorAll('button[data-action]').forEach(button=>{const action=button.dataset.action;let active=false;const down=e=>{e.preventDefault();if(active)return;active=true;button.classList.add('active');game.input(action,true)},up=e=>{e.preventDefault();if(!active)return;active=false;button.classList.remove('active');game.input(action,false)};button.addEventListener('touchstart',down,{passive:false});button.addEventListener('touchend',up,{passive:false});button.addEventListener('touchcancel',up,{passive:false});button.addEventListener('mousedown',down);button.addEventListener('mouseup',up);button.addEventListener('mouseleave',up);button.addEventListener('contextmenu',e=>e.preventDefault())});
+  const keys={ArrowLeft:'left',ArrowRight:'right',ArrowDown:'soft_drop',KeyZ:'rotate_ccw',KeyX:'rotate_cw',Space:'hard_drop',ShiftLeft:'hold',ShiftRight:'hold',Escape:'pause',Enter:'start'},held=new Set;addEventListener('keydown',e=>{const a=keys[e.code];if(!a||held.has(e.code))return;e.preventDefault();held.add(e.code);game.input(a,true)});addEventListener('keyup',e=>{const a=keys[e.code];if(!a)return;e.preventDefault();held.delete(e.code);game.input(a,false)});addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
+  async function draw(now){if(drawing||ble.restoring||!ble.device?.gatt.connected||now-lastDraw<1000/settings.fps)return;drawing=true;lastDraw=now;try{if(!pending.length){render(game,current);const commands=diffCommands(previous,current,forceFull);if(!commands.length)return;pending=packCommands(commands);pendingSnapshot=current.copy();forceFull=false}const batch=pending.splice(0,3);try{for(const c of batch)await ble.enqueue(c);if(!pending.length&&pendingSnapshot){previous=pendingSnapshot;pendingSnapshot=null}}catch(e){pending.unshift(...batch);report(e)}}finally{drawing=false}}
+  let last=performance.now(),acc=0;function loop(now){acc+=Math.min(now-last,100);last=now;while(acc>=1000/60){game.step(1000/60);acc-=1000/60}draw(now);requestAnimationFrame(loop)}requestAnimationFrame(loop);setInterval(()=>ble.status(ble.device?.gatt.connected?`接続 ${ble.device.name||''}`:ble.reconnecting?'再接続中':'未接続',!!ble.device?.gatt.connected),250);
+  if(!navigator.bluetooth)document.querySelector('#unsupported').hidden=false;
+})();
+</script>
+</body>
+</html>
