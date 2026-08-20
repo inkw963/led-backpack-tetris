@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="build" content="2026-08-20b">
   <title>LED Backpack Tetris</title>
   <style>
     :root{color-scheme:dark;font-family:system-ui,sans-serif;--bg:#080b12;--button:#172238;--border:#384c70;--accent:#63c8ff;--pressed:#2973b9;--bad:#ff6b78}
@@ -63,7 +64,7 @@
 </div>
 <div id="diagnostics" class="overlay" hidden>
   <section class="panel" role="dialog" aria-modal="true" aria-labelledby="diagnostics-title">
-    <h1 id="diagnostics-title">診断ログ <button type="button" id="diagnostics-close">閉じる</button></h1>
+    <h1 id="diagnostics-title">診断ログ <span id="build-tag" style="font-size:.7em;opacity:.7;font-weight:400">build 2026-08-20b</span> <button type="button" id="diagnostics-close">閉じる</button></h1>
     <div class="panel-actions"><button type="button" id="diagnostics-copy">ログをコピー</button><button type="button" id="diagnostics-clear">ログを消去</button></div>
     <pre id="diagnostic-log" tabindex="0"></pre>
     <textarea id="diagnostic-fallback" hidden readonly aria-label="コピー用診断ログ"></textarea>
