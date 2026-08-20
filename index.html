@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="build" content="2026-08-20b">
+  <meta name="build" content="2026-08-20c">
   <title>LED Backpack Tetris</title>
   <style>
     :root{color-scheme:dark;font-family:system-ui,sans-serif;--bg:#080b12;--button:#172238;--border:#384c70;--accent:#63c8ff;--pressed:#2973b9;--bad:#ff6b78}
@@ -25,7 +25,7 @@
     .overlay{position:fixed;inset:0;z-index:5;display:grid;place-items:center;padding:16px;background:rgb(0 0 0/72%)} .overlay[hidden]{display:none}
     .panel{width:min(420px,100%);max-height:100%;overflow:auto;border:1px solid var(--border);border-radius:16px;background:#101725;padding:18px;box-shadow:0 16px 50px #000}
     .panel h1{margin:0 0 14px;font-size:20px}.panel label{display:grid;grid-template-columns:1fr 100px;align-items:center;gap:12px;margin:10px 0}.panel input{width:100%;min-height:42px;border:1px solid var(--border);border-radius:8px;background:#080b12;color:#fff;font-size:17px;padding:6px}
-    .check{grid-template-columns:auto 1fr!important}.check input{width:22px;min-height:22px}.error{min-height:2.5em;color:var(--bad);font-size:13px}.panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.panel-actions button{min-height:52px;font-size:16px}
+    .check{grid-template-columns:auto 1fr!important}.check input{width:22px;min-height:22px}.error{min-height:2.5em;color:var(--bad);font-size:13px}.notice{margin:0 0 12px;color:var(--accent);font-size:13px}.settings-preview{margin:14px 0;padding:10px;border:1px solid var(--border);border-radius:8px;background:#080b12;font:13px/1.4 ui-monospace,monospace}.settings-preview.warning{border-color:var(--bad);color:var(--bad)}.panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.panel-actions button{min-height:52px;font-size:16px}#settings-reset{width:100%;min-height:44px;margin-bottom:8px;font-size:14px}.build-note{display:block;margin-top:12px;text-align:right;font:11px/1.2 ui-monospace,monospace;opacity:.65}
     #diagnostics .panel{display:grid;grid-template-rows:auto auto minmax(120px,1fr);width:min(620px,100%);height:min(80dvh,680px)}#diagnostics h1{display:flex;align-items:center;justify-content:space-between;gap:8px}#diagnostics h1 button{min-height:40px;font-size:14px}#diagnostic-log{min-height:0;overflow:auto;margin:0;padding:10px;border:1px solid var(--border);border-radius:8px;background:#080b12;color:#dce8ff;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;user-select:text;-webkit-user-select:text;touch-action:pan-y}#diagnostic-fallback{width:100%;min-height:90px;margin-top:8px;background:#080b12;color:#fff;user-select:text;-webkit-user-select:text;touch-action:pan-y}
     #unsupported{position:fixed;inset:0;z-index:10;display:grid;place-items:center;padding:24px;background:var(--bg);text-align:center;line-height:1.7} #unsupported[hidden]{display:none}
   </style>
@@ -49,6 +49,7 @@
 <div id="settings" class="overlay" hidden>
   <form class="panel" id="settings-form">
     <h1>設定</h1>
+    <div id="settings-migration" class="notice" role="status" hidden></div>
     <label class="check"><input id="all-devices" type="checkbox"><span>すべてのデバイスを表示</span></label>
     <label>盤面 cols<input name="cols" type="number" min="4" max="64" required></label>
     <label>盤面 rows<input name="rows" type="number" min="4" max="64" required></label>
@@ -58,13 +59,16 @@
     <label>ソフトドロップ ms<input name="soft_drop_ms" type="number" min="40" max="400" step="1" required></label>
     <label>輝度 (0–15)<input name="brightness" type="number" min="0" max="15" required></label>
     <label>描画 fps (1–30)<input name="fps" type="number" min="1" max="30" required></label>
+    <div id="layout-preview" class="settings-preview" aria-live="polite"></div>
     <div id="settings-error" class="error"></div>
+    <button type="button" id="settings-reset">既定に戻す</button>
     <div class="panel-actions"><button type="button" id="settings-close">閉じる</button><button type="submit">適用</button></div>
+    <small id="settings-build" class="build-note"></small>
   </form>
 </div>
 <div id="diagnostics" class="overlay" hidden>
   <section class="panel" role="dialog" aria-modal="true" aria-labelledby="diagnostics-title">
-    <h1 id="diagnostics-title">診断ログ <span id="build-tag" style="font-size:.7em;opacity:.7;font-weight:400">build 2026-08-20b</span> <button type="button" id="diagnostics-close">閉じる</button></h1>
+    <h1 id="diagnostics-title">診断ログ <span id="build-tag" style="font-size:.7em;opacity:.7;font-weight:400"></span> <button type="button" id="diagnostics-close">閉じる</button></h1>
     <div class="panel-actions"><button type="button" id="diagnostics-copy">ログをコピー</button><button type="button" id="diagnostics-clear">ログを消去</button></div>
     <pre id="diagnostic-log" tabindex="0"></pre>
     <textarea id="diagnostic-fallback" hidden readonly aria-label="コピー用診断ログ"></textarea>
@@ -141,7 +145,8 @@
   }
   class FrameBuffer{constructor(w=64,h=64){this.w=w;this.h=h;this.pixels=Array.from({length:h},()=>Array.from({length:w},()=>BLACK))}copy(){const f=new FrameBuffer(this.w,this.h);f.pixels=this.pixels.map(r=>r.map(c=>c.slice()));return f}clear(){for(let y=0;y<this.h;y++)for(let x=0;x<this.w;x++)this.pixels[y][x]=BLACK}fillRect(x0,y0,x1,y1,c){for(let y=Math.max(0,y0);y<=Math.min(this.h-1,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(this.w-1,x1);x++)this.pixels[y][x]=c}}
   const same=(a,b)=>a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2], key=c=>c.join(','), sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  function layout(){const w=settings.cols*settings.cell_w,h=settings.rows*settings.cell_h,x=w<64?1:0,sidebarX=x+w+3,sidebar=settings.sidebar&&64-sidebarX>=19;return{x,y:Math.floor((64-h)/2),w,h,sidebarX,sidebar}}
+  function calculateLayout(config){const w=config.cols*config.cell_w,h=config.rows*config.cell_h,x=w<64?1:0,sidebarX=x+w+3,sidebar=config.sidebar&&64-sidebarX>=19,sidebarWidth=sidebar?Math.max(0,64-x-w):0;return{x,y:Math.floor((64-h)/2),w,h,sidebarX,sidebar,sidebarWidth}}
+  function layout(){return calculateLayout(settings)}
   function text(fb,value,x,y,right){let cursor=x;for(const char of value){const glyph=FONT[char];if(!glyph)continue;if(cursor+2>right){cursor=x;y+=6}glyph.forEach((row,gy)=>[...row].forEach((on,gx)=>{if(on==='1')fb.fillRect(cursor+gx,y+gy,cursor+gx,y+gy,TEXT)}));cursor+=4}}
   function render(game,fb){fb.clear();const l=layout(),cell=(x,y,c)=>fb.fillRect(l.x+x*settings.cell_w,l.y+y*settings.cell_h,l.x+x*settings.cell_w+Math.max(0,settings.cell_w-2),l.y+y*settings.cell_h+Math.max(0,settings.cell_h-2),c);game.board.forEach((row,y)=>row.forEach((v,x)=>{if(v)cell(x,y,COLORS[v])}));if(game.state!=='GAME_OVER')for(const [x,y] of game.cells())if(x>=0&&x<game.cols&&y>=0&&y<game.rows)cell(x,y,COLORS[game.current.kind]);if(l.x>=1&&l.y>=1&&l.x+l.w<64&&l.y+l.h<64){const c=[40,40,48];fb.fillRect(l.x-1,l.y-1,l.x+l.w,l.y-1,c);fb.fillRect(l.x-1,l.y+l.h,l.x+l.w,l.y+l.h,c);fb.fillRect(l.x-1,l.y-1,l.x-1,l.y+l.h,c);fb.fillRect(l.x+l.w,l.y-1,l.x+l.w,l.y+l.h,c)}if(l.sidebar){const right=63,width=64-l.sidebarX,previewX=l.sidebarX+Math.floor((width-12)/2),kind=game.queue[0];text(fb,'NEXT',l.sidebarX,2,right);for(const [x,y] of SHAPES[kind][0])fb.fillRect(previewX+x*3,9+y*3,previewX+x*3+2,9+y*3+2,COLORS[kind]);text(fb,'SCORE',l.sidebarX,24,right);text(fb,String(game.score),l.sidebarX,30,right)}}
   function rectangle(points){const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return points.length===(x1-x0+1)*(y1-y0+1)?[x0,y0,x1,y1]:null}
@@ -179,13 +184,20 @@
     retry(){if(!this.device)return this.choose();return this.reconnect()}
     disconnect(){this.manualDisconnect=true;this.autoReconnect=false;this.session++;this.write=null;this.notify=null;this.server=null;try{if(this.device?.gatt.connected)this.device.gatt.disconnect()}catch(e){this.logError('disconnect',e)}this.setState('idle')}
   }
-  const defaults={cols:10,rows:15,cell_w:4,cell_h:4,sidebar:true,soft_drop_ms:120,brightness:8,fps:10};let settings={...defaults};try{settings={...settings,...JSON.parse(localStorage.getItem('led-backpack-tetris')||'{}')}}catch{}
+  const SETTINGS_KEY='led-backpack-tetris',defaults={schema:2,cols:10,rows:15,cell_w:4,cell_h:4,sidebar:true,soft_drop_ms:120,brightness:8,fps:10},settingKeys=Object.keys(defaults).filter(k=>k!=='schema'),layoutKeys=['cols','rows','cell_w','cell_h','sidebar'];
+  let settings={...defaults},migrationNoticePending=false;
+  try{const raw=localStorage.getItem(SETTINGS_KEY);if(raw!==null){const saved=JSON.parse(raw);if(saved&&typeof saved==='object'){settings={...settings,...saved};const savedSchema=Number(saved.schema);if(!Number.isFinite(savedSchema)||savedSchema<defaults.schema){for(const k of layoutKeys)settings[k]=defaults[k];settings.schema=defaults.schema;localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));migrationNoticePending=true;diagnostics.add('settings migrated to schema 2 (layout reset to defaults)')}}}}catch{}
   let game=new Game(settings.cols,settings.rows,settings.soft_drop_ms),current=new FrameBuffer,previous=new FrameBuffer,pending=[],pendingSnapshot=null,forceFull=true,lastDraw=0,drawing=false,ble=new Ble;
-  const connection=document.querySelector('#connection'),form=document.querySelector('#settings-form'),overlay=document.querySelector('#settings'),error=document.querySelector('#settings-error');
+  const connection=document.querySelector('#connection'),form=document.querySelector('#settings-form'),overlay=document.querySelector('#settings'),error=document.querySelector('#settings-error'),migrationNotice=document.querySelector('#settings-migration'),layoutPreview=document.querySelector('#layout-preview');
+  const buildText=`build ${document.querySelector('meta[name="build"]')?.content||'unknown'}`;document.querySelector('#build-tag').textContent=buildText;document.querySelector('#settings-build').textContent=buildText;
   function prepareRedraw(){render(game,current);previous=new FrameBuffer;pending=[];pendingSnapshot=null;forceFull=false;lastDraw=0;diagnostics.add('full redraw queued for paced game loop')}
-  function showSettings(){for(const k of Object.keys(defaults)){if(typeof defaults[k]==='boolean')form.elements[k].checked=settings[k];else form.elements[k].value=settings[k]}error.textContent='';overlay.hidden=false}
+  function applySettingsToForm(values){for(const k of settingKeys){if(typeof defaults[k]==='boolean')form.elements[k].checked=values[k];else form.elements[k].value=values[k]}}
+  function formSettings(){const values={};for(const k of settingKeys)values[k]=typeof defaults[k]==='boolean'?form.elements[k].checked:Number(form.elements[k].value);return values}
+  function updateLayoutPreview(){const values=formSettings();if(!['cols','rows','cell_w','cell_h'].every(k=>Number.isFinite(values[k]))){layoutPreview.textContent='盤面サイズを入力してください。';layoutPreview.classList.add('warning');return}const result=calculateLayout(values),sidebarText=result.sidebar?`${result.sidebarWidth}px (表示)`:values.sidebar?'0px (幅が足りないため非表示)':'0px (設定により非表示)';layoutPreview.textContent=`盤面 ${result.w}x${result.h} / サイドバー ${sidebarText}`;layoutPreview.classList.toggle('warning',!result.sidebar)}
+  function showSettings(){applySettingsToForm(settings);error.textContent='';if(migrationNoticePending){migrationNotice.textContent='レイアウト設定を新しい既定値に更新しました';migrationNotice.hidden=false;migrationNoticePending=false}else{migrationNotice.textContent='';migrationNotice.hidden=true}updateLayoutPreview();overlay.hidden=false}
   document.querySelector('#settings-open').addEventListener('click',showSettings);document.querySelector('#settings-close').addEventListener('click',()=>overlay.hidden=true);
-  form.addEventListener('submit',e=>{e.preventDefault();const next={};for(const k of Object.keys(defaults))next[k]=typeof defaults[k]==='boolean'?form.elements[k].checked:Number(form.elements[k].value);const integers=['cols','rows','cell_w','cell_h','brightness','fps'];if(!integers.every(k=>Number.isInteger(next[k]))||!Number.isFinite(next.soft_drop_ms)){error.textContent='入力値を確認してください。';return}if(next.cols*next.cell_w>64||next.rows*next.cell_h>64){error.textContent=`盤面 ${next.cols*next.cell_w}×${next.rows*next.cell_h} は 64×64 に収まりません。`;return}if(next.cols<4||next.rows<4||next.cell_w<1||next.cell_h<1||next.soft_drop_ms<40||next.soft_drop_ms>400||next.brightness<0||next.brightness>15||next.fps<1||next.fps>30){error.textContent='入力範囲を確認してください。';return}const resized=next.cols!==settings.cols||next.rows!==settings.rows;settings=next;localStorage.setItem('led-backpack-tetris',JSON.stringify(settings));if(resized)game=new Game(settings.cols,settings.rows,settings.soft_drop_ms);else game.softDropMs=settings.soft_drop_ms;forceFull=true;pending=[];previous=new FrameBuffer;if(ble.state==='connected')ble.enqueue(P.cmdLight(settings.brightness)).catch(report);overlay.hidden=true});
+  form.addEventListener('input',updateLayoutPreview);document.querySelector('#settings-reset').addEventListener('click',()=>{applySettingsToForm(defaults);updateLayoutPreview();error.textContent='既定値に戻しました。保存してください。'});
+  form.addEventListener('submit',e=>{e.preventDefault();const next={schema:defaults.schema,...formSettings()};const integers=['cols','rows','cell_w','cell_h','brightness','fps'];if(!integers.every(k=>Number.isInteger(next[k]))||!Number.isFinite(next.soft_drop_ms)){error.textContent='入力値を確認してください。';return}if(next.cols*next.cell_w>64||next.rows*next.cell_h>64){error.textContent=`盤面 ${next.cols*next.cell_w}×${next.rows*next.cell_h} は 64×64 に収まりません。`;return}if(next.cols<4||next.rows<4||next.cell_w<1||next.cell_h<1||next.soft_drop_ms<40||next.soft_drop_ms>400||next.brightness<0||next.brightness>15||next.fps<1||next.fps>30){error.textContent='入力範囲を確認してください。';return}const resized=next.cols!==settings.cols||next.rows!==settings.rows;settings=next;localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));if(resized)game=new Game(settings.cols,settings.rows,settings.soft_drop_ms);else game.softDropMs=settings.soft_drop_ms;forceFull=true;pending=[];previous=new FrameBuffer;if(ble.state==='connected')ble.enqueue(P.cmdLight(settings.brightness)).catch(report);overlay.hidden=true});
   function report(e){console.error(e);ble.logError('application',e)}
   document.querySelector('#connect').addEventListener('click',()=>ble.choose().catch(report));
   document.querySelector('#retry').addEventListener('click',()=>ble.retry().catch(report));document.querySelector('#disconnect').addEventListener('click',()=>ble.disconnect());
